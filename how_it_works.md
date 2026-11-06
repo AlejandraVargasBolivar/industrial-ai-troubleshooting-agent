@@ -1,5 +1,10 @@
 # How the Boiler Historian Application Works
 
+> Historical architecture reference: the Claude-specific startup and model descriptions
+> below document the original version. The supported runtime is now the local Ollama
+> agent. See [the complete migration guide](docs/MIGRATION_GUIDE.md) for the current
+> architecture, startup instructions, organized files and knowledge-graph behavior.
+
 This document explains every piece of the system in plain terms — what each file does,
 how all the parts connect, and exactly what happens when you ask Claude a question.
 

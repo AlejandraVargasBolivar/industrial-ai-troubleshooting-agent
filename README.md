@@ -1,14 +1,14 @@
 # Agentic AI Industrial Troubleshooting Assistant
 By Scott Duncan. Reach me on LinkedIn here: https://www.linkedin.com/in/s-r-duncan/. View my website here: https://scottduncanai.com/
 
-An agentic AI industrial troubleshooting assistant built on top of a [public coal-fired boiler dataset](https://www.kaggle.com/datasets/nikitamanaenkov/time-series-of-industrial-boiler-operations). The application connects Claude to four plant data sources through an MCP server:
+An agentic AI industrial troubleshooting assistant built on top of a [public coal-fired boiler dataset](https://www.kaggle.com/datasets/nikitamanaenkov/time-series-of-industrial-boiler-operations). The application connects a local Ollama model to four plant data sources through an MCP server:
 
 1. **time-series historian** (5 days of sensor data across 30 tags)
 2. **DCS alarm log** (6,005 alarm events)
 3. **process knowledge graph** (equipment topology)
 4. **plant document library** (62 procedures, datasheets, and troubleshooting guides).
 
-Users interact with the troubleshooting assistant through Claude Code using natural language prompts. Ask why steam temperature dropped or what caused an alarm flood, and it walks you through exactly how it reached the answer: every historian query, alarm lookup, knowledge-graph traversal, and plant-document search it ran to drill down to the root cause, in the order it ran them.
+Users interact through the local Python agent using natural-language prompts. Claude Code and an Anthropic subscription are not required. The original industrial instructions and analytical workflows are retained as reference assets. Ask why steam temperature dropped or what caused an alarm flood, and review the historian queries, alarm lookups, graph traversals and document searches in a sealed audit trail.
 
 
 https://github.com/user-attachments/assets/19ca5cb0-4407-44f8-ad01-733f0c95c477
@@ -18,30 +18,31 @@ https://github.com/user-attachments/assets/19ca5cb0-4407-44f8-ad01-733f0c95c477
 
 ## Getting Started
 
-**Roughly 5–10 minutes to a working result.** Most of that is an automated download on first run.
+Requirements: **Python 3.11+** and a reachable private Ollama server with a tool-capable
+chat model and `bge-m3:latest` installed. The defaults use `qwen3.5:35b` and
+`http://172.19.120.10:11434`; configure `OLLAMA_URL`, `OLLAMA_MODEL` and
+`OLLAMA_EMBED_MODEL` for your installation.
 
-You need two things installed before you begin:
+On Windows, from the project directory:
 
-1. **Python 3.11 or newer**, download from [python.org](https://www.python.org/downloads/). On Windows, make sure to check **"Add Python to PATH"** during installation. On macOS, check your current version with `python3 --version` in Terminal — macOS ships with an older Python, so you'll likely need to install a newer one from the link above.
-2. **Claude Code**, see the [installation guide](https://docs.anthropic.com/en/docs/claude-code/overview). Available as a CLI, desktop app, or IDE extension. This requires a Claude Pro account ($20/month) or higher, so set that up first if you don't have one.
-
-### Setup (3 steps)
-
-**Step 1.** Download this repository and unzip it (or `git clone` it if you're familiar with git).
-
-**Step 2.** Open Claude Code in the project folder:
-- **Desktop app**: Open the app and select the project folder
-- **CLI**: Open a terminal, navigate to the project folder, and type `claude`
-
-**Step 3.** Once Claude Code is running, type:
-
-```
-/setup
+```powershell
+python setup_local.py
+.\.venv\Scripts\python.exe local_agent.py --check
+.\.venv\Scripts\python.exe local_agent.py
 ```
 
-Claude will install everything automatically: dependencies, document search index, and server configuration. No coding required. When it's done, it will ask you to restart Claude Code. After restarting, you're ready to go.
+The setup script installs dependencies only into the project virtual environment,
+checks Ollama and MCP, and builds the document index if it is missing. It does not
+download Ollama models or require Claude configuration. Existing indexes are retained.
+Use `python setup_local.py --rebuild-index` when deliberately changing embedding models.
+On macOS/Linux, use `python3` for setup and `.venv/bin/python` afterwards.
 
-> **Disk space.** `/setup` installs ~1.5 GB of Python dependencies (mostly PyTorch, which powers document search) plus a ~130 MB embedding model. The repo itself is tiny (~10 MB). Make sure you have **~2 GB of free disk space** before running it.
+See [Local Agent Operations](docs/LOCAL_AGENT.md) for configuration, model probes, audit
+requirements, tests, migration findings and known limitations.
+Start with the [complete migration and architecture guide](docs/MIGRATION_GUIDE.md)
+for the organized file inventory, detailed graph explanation and walkthrough.
+The [seven-model evaluation](docs/MODEL_EVALUATION.md) records the current selection
+evidence rather than assuming that a larger model is better.
 
 ## What can I do with it?
 
@@ -57,14 +58,20 @@ Once setup is complete, just ask questions in plain English:
 
 ### Slash commands
 
-The project includes built-in slash commands you can type directly into Claude Code:
+The local interactive agent supports these commands:
 
 | Command | What it does |
 |---------|-------------|
-| `/setup` | First-time setup: installs dependencies, builds search index, configures the server |
+| `/new` | Clear conversational context; each question already has an independent audit |
+| `/exit` | Exit cleanly |
 | `/mspc-analysis` | Runs a PCA-based Multivariate Statistical Process Control analysis. Builds a model from normal operating data, computes T² and SPE monitoring statistics, detects anomalous periods, generates contribution plots for the worst events, and cross-references them with alarms and upstream equipment. |
 | `/ml-fault-detection` | Runs an Isolation Forest anomaly detection and XGBoost feature importance analysis on the historian data. Trains on normal operating data to detect fault periods across all 30 sensors simultaneously — including periods where the primary KPI has not yet moved. Ranks the remaining 29 tags by their ability to predict steam temperature excursions, then cross-references the worst events with the alarm log and knowledge graph. |
 | `/audit-trail` | Generates a formatted audit report from the most recent root cause investigation (see below) |
+
+First-time setup is the standalone `setup_local.py` command, not a model-driven shell action.
+`/audit-trail RUN_ID` selects an older finalized trace. Reports and plots are linked,
+not opened automatically. `--resume RUN_ID` restores the saved completed conversation;
+current evidence is always queried again.
 
 ### Auditable root cause analysis
 
@@ -94,7 +101,7 @@ For the full methodology and all available query workflows, see [CLAUDE.md](CLAU
 
 ### Data Sources
 
-The system connects Claude to four data sources. The raw sensor data comes from the [Time Series of Industrial Boiler Operations](https://www.kaggle.com/datasets/nikitamanaenkov/time-series-of-industrial-boiler-operations) dataset on Kaggle. The alarm log, knowledge graph, and document library are derived and constructed on top of it.
+The system connects the local model to four data sources. The raw sensor data comes from the [Time Series of Industrial Boiler Operations](https://www.kaggle.com/datasets/nikitamanaenkov/time-series-of-industrial-boiler-operations) dataset on Kaggle. The alarm log, knowledge graph, and document library are derived and constructed on top of it.
 
 <img width="1603" height="900" alt="Architecture diagram" src="https://github.com/user-attachments/assets/e1c31aec-7507-482c-932b-9786e0a1b7af" />
 
@@ -159,7 +166,7 @@ A JSON-serialized NetworkX graph representing the physical and process topology 
 
 #### Plant Document Library (`RAG docs/` + `rag_vector_db/`)
 
-A collection of **62 markdown documents** covering the full range of plant technical documentation, indexed in a ChromaDB vector database for semantic search. The agent can surface the right section of the right document in response to natural-language queries without reading every file. The vector index contains 356 searchable chunks built with BGE-small embeddings.
+A collection of **62 markdown documents** covering the full range of plant technical documentation, indexed in a ChromaDB vector database for semantic search. The agent can surface the right section of the right document in response to natural-language queries without reading every file. The vector index contains 356 searchable chunks built with Ollama BGE-M3 embeddings.
 
 | Category | Count | Examples |
 |----------|-------|---------|
@@ -176,7 +183,10 @@ Accessible via the `docs_*` MCP tools; rebuild the index with `python build_docs
 
 ### MCP Server
 
-The MCP server (`historian_mcp_server.py`) is the bridge between Claude and the four data sources. It exposes **23 tools** organized into four groups, plus three audit tools used during root cause investigations. Claude decides which tools to call and in what order based on your question. You never interact with the tools directly.
+The MCP server (`historian_mcp_server.py`) bridges the local agent and the data sources.
+It exposes **25 tools**: 20 historian/alarm/graph/document tools, two allowlisted
+analytics tools and three audit tools. The runtime manages audit start/end; the
+local model selects data, reasoning and analytic tools based on the question.
 
 #### Historian Tools
 
@@ -232,7 +242,15 @@ The MCP server (`historian_mcp_server.py`) is the bridge between Claude and the 
 
 | File | What it does |
 |------|-------------|
-| `historian_mcp_server.py` | Server entry point: connects Claude to the data sources |
+| `local_agent.py` | Stable CLI entry point |
+| `local_runtime/agent.py` | Local Ollama conversation and audit orchestration |
+| `local_runtime/ollama_client.py` | Shared local endpoint and embedding validation |
+| `local_runtime/analysis_tools.py` | Validated MCP access to existing analytical scripts |
+| `setup_local.py` | Claude-independent environment and index setup |
+| `scripts/evaluate_models.py` | Sequential, reproducible JSON protocol and evidence-caution evaluation |
+| `docs/` | Current migration, operations and model-selection guides |
+| `archive/migration_experiments/` | Preserved historical experiments and backups; not active runtime |
+| `historian_mcp_server.py` | MCP entry point connecting the agent to data sources |
 | `historian_tools.py` | Time-series queries (trends, statistics, plots) |
 | `alarm_tools.py` | Alarm log queries (context search, flood detection, statistics) |
 | `kg_tools.py` | Knowledge graph queries (upstream sensors, process paths) |
@@ -242,7 +260,7 @@ The MCP server (`historian_mcp_server.py`) is the bridge between Claude and the 
 | `ml_fault_detection.py` | Isolation Forest anomaly detection and XGBoost feature importance analysis |
 | `generate_alarms.py` | Rebuilds the alarm database from historian data |
 | `build_docs_db.py` | Rebuilds the document search index |
-| `CLAUDE.md` | System reference for Claude: tag tables, workflows, methodology |
+| `CLAUDE.md` | Original industrial system reference, reused by the local runtime |
 
 ## Contributing and extending
 
@@ -260,28 +278,19 @@ The most natural places to extend it:
 ## For developers
 
 <details>
-<summary>Manual setup (if you prefer not to use /setup)</summary>
+<summary>Manual local setup</summary>
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
+```powershell
+# Create the isolated environment and install dependencies
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
-# Build the document vector index (downloads ~130MB embedding model on first run)
-python build_docs_db.py
+# Build the index using BGE-M3 on the private Ollama server
+.\.venv\Scripts\python.exe build_docs_db.py
 
-# Configure the MCP server by creating a .mcp.json file at the project root
-# (this is the file Claude Code reads to register project MCP servers):
-# {
-#   "mcpServers": {
-#     "boiler-historian": {
-#       "type": "stdio",
-#       "command": "/absolute/path/to/python",
-#       "args": ["/absolute/path/to/this/folder/historian_mcp_server.py"]
-#     }
-#   }
-# }
-
-# Restart Claude Code to load the MCP server (approve the .mcp.json trust prompt on first run)
+# Check and launch; no external MCP registration is necessary
+.\.venv\Scripts\python.exe local_agent.py --check
+.\.venv\Scripts\python.exe local_agent.py
 ```
 
 </details>

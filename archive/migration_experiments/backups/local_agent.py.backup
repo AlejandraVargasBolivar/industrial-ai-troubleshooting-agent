@@ -1,0 +1,198 @@
+
+import asyncio
+import json
+import os
+from typing import Any
+
+import httpx
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+
+# ---------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------
+
+OLLAMA_URL = "http://172.19.120.10:11434"
+OLLAMA_MODEL = "qwen3.5:35b"
+
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PYTHON_EXE = os.path.join(PROJECT_DIR, ".venv", "Scripts", "python.exe")
+MCP_SERVER = os.path.join(PROJECT_DIR, "historian_mcp_server.py")
+
+MAX_TOOL_ROUNDS = 10
+
+
+# ---------------------------------------------------------
+# Ollama API
+# ---------------------------------------------------------
+
+async def ollama_chat(
+    client: httpx.AsyncClient,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+) -> dict[str, Any]:
+    response = await client.post(
+        f"{OLLAMA_URL}/api/chat",
+        json={
+            "model": OLLAMA_MODEL,
+            "stream": False,
+            "messages": messages,
+            "tools": tools,
+        },
+        timeout=300.0,
+    )
+    response.raise_for_status()
+    return response.json()["message"]
+
+
+# ---------------------------------------------------------
+# MCP tool definitions
+# ---------------------------------------------------------
+
+def convert_mcp_tools(mcp_tools: list[Any]) -> list[dict[str, Any]]:
+    ollama_tools = []
+
+    for tool in mcp_tools:
+        ollama_tools.append({
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description or "",
+                "parameters": tool.inputSchema,
+            },
+        })
+
+    return ollama_tools
+
+
+# ---------------------------------------------------------
+# Agent
+# ---------------------------------------------------------
+
+async def run_agent(question: str) -> None:
+    server_params = StdioServerParameters(
+        command=PYTHON_EXE,
+        args=[MCP_SERVER],
+        cwd=PROJECT_DIR,
+    )
+
+    async with stdio_client(server_params) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+
+            mcp_tools_result = await session.list_tools()
+            tools = convert_mcp_tools(mcp_tools_result.tools)
+
+            print(f"\nModelo: {OLLAMA_MODEL}")
+            print(f"Herramientas MCP disponibles: {len(tools)}")
+            print("\nConsultando al agente...\n")
+
+            
+            # Load the original project instructions.
+            claude_md_path = os.path.join(PROJECT_DIR, "CLAUDE.md")
+
+            with open(claude_md_path, "r", encoding="utf-8") as file:
+                project_instructions = file.read()
+
+            system_prompt = (
+                project_instructions
+                + "\n\n## Local Ollama Agent\n"
+                + "You are running locally through Ollama instead of Claude Code. "
+                + "Follow the project instructions above. Use the available MCP "
+                + "tools and existing project scripts. Never invent measurements, "
+                + "timestamps, tool results, evidence steps, or document citations. "
+                + "For diagnostic investigations, follow the audited root-cause "
+                + "methodology, record hypotheses and observations, check cause "
+                + "versus symptom, and log evidence-based conclusions and corrective "
+                + "actions. For ML Fault Detection and MSPC requests, follow the "
+                + "corresponding project workflows. If a required step cannot be "
+                + "completed, report the limitation explicitly."
+            )
+
+            messages: list[dict[str, Any]] = [
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {"role": "user", "content": question},
+            ]
+
+
+            async with httpx.AsyncClient() as client:
+                for round_number in range(MAX_TOOL_ROUNDS):
+                    message = await ollama_chat(client, messages, tools)
+                    messages.append(message)
+
+                    tool_calls = message.get("tool_calls", [])
+
+                    if not tool_calls:
+                        print(message.get("content", "The model returned no text."))
+                        return
+
+                    for tool_call in tool_calls:
+                        function = tool_call["function"]
+                        tool_name = function["name"]
+                        arguments = function.get("arguments", {})
+
+                        if isinstance(arguments, str):
+                            arguments = json.loads(arguments)
+
+                        print(f"[Herramienta] {tool_name}({json.dumps(arguments, ensure_ascii=False)})")
+
+                        try:
+                            result = await session.call_tool(
+                                tool_name,
+                                arguments=arguments,
+                            )
+
+                            tool_output = "\n".join(
+                                item.text
+                                for item in result.content
+                                if hasattr(item, "text")
+                            )
+
+                            if result.isError:
+                                tool_output = f"Tool execution error: {tool_output}"
+
+                        except Exception as exc:
+                            tool_output = f"Tool execution failed: {exc}"
+
+                        messages.append({
+                            "role": "tool",
+                            "tool_name": tool_name,
+                            "content": tool_output,
+                        })
+
+                print(
+                    "Se alcanzó el límite de llamadas a herramientas. "
+                    "Intenta una pregunta más concreta."
+                )
+
+
+async def main() -> None:
+    print("=" * 60)
+    print("Industrial Troubleshooting Agent — Local Ollama")
+    print("=" * 60)
+
+    if not os.path.isfile(PYTHON_EXE):
+        raise FileNotFoundError(
+            f"No se encontró el Python del entorno virtual: {PYTHON_EXE}"
+        )
+
+    if not os.path.isfile(MCP_SERVER):
+        raise FileNotFoundError(
+            f"No se encontró el servidor MCP: {MCP_SERVER}"
+        )
+
+    question = input("\n¿Qué quieres investigar? ").strip()
+
+    if not question:
+        print("No se ha introducido ninguna pregunta.")
+        return
+
+    await run_agent(question)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

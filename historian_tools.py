@@ -13,6 +13,7 @@ import re
 from datetime import datetime
 
 import duckdb
+from tag_metadata import measurement_units
 import matplotlib
 matplotlib.use("Agg")
 from hmi_style import apply_hmi_style, TICK_COLOR, SPINE_COLOR
@@ -93,7 +94,7 @@ def tool_list_tags() -> list[dict]:
         {
             "tag_name":    r[0],
             "description": r[1],
-            "units":       r[2],
+            "units":       measurement_units(r[0], r[2]),
             "sensor_type": r[3],
             "normal_min":  r[4],
             "normal_max":  r[5],
@@ -118,7 +119,7 @@ def tool_search_tags(query: str) -> list[dict]:
         {
             "tag_name":    r[0],
             "description": r[1],
-            "units":       r[2],
+            "units":       measurement_units(r[0], r[2]),
             "sensor_type": r[3],
             "normal_min":  r[4],
             "normal_max":  r[5],
@@ -251,7 +252,7 @@ def tool_get_statistics(
 
         results[tag] = {
             "description": meta[0] if meta else None,
-            "units":       meta[1] if meta else None,
+            "units":       measurement_units(tag, meta[1] if meta else None),
             "min":         round(row[0], 4) if row[0] is not None else None,
             "max":         round(row[1], 4) if row[1] is not None else None,
             "mean":        round(row[2], 4) if row[2] is not None else None,
@@ -383,7 +384,8 @@ def tool_plot_tags(
     ).fetchall()
     con.close()
     meta = {
-        r[0]: {"description": r[1], "units": r[2], "normal_min": r[3], "normal_max": r[4]}
+        r[0]: {"description": r[1], "units": measurement_units(r[0], r[2]),
+               "normal_min": r[3], "normal_max": r[4]}
         for r in meta_rows
     }
 

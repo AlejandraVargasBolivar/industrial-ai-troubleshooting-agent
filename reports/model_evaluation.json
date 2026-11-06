@@ -1,0 +1,321 @@
+{
+  "started_at": "2026-10-28T08:57:02.182410+00:00",
+  "scope": "Synthetic protocol and explicit evidence-caution checks; not industrial accuracy.",
+  "configuration": {
+    "url": "http://172.19.120.10:11434",
+    "protocol": "json",
+    "context": 32768,
+    "think": false,
+    "temperature": 0,
+    "timeout_seconds": 120.0,
+    "embedding_model": "bge-m3:latest",
+    "sequential": true,
+    "timing_note": "First case includes loading; later cases may use a warm runner."
+  },
+  "models": [
+    {
+      "model": "qwen3.5:35b",
+      "cases": [
+        {
+          "name": "tool_round_trip",
+          "model": "qwen3.5:35b",
+          "passed": true,
+          "seconds": 12.323
+        },
+        {
+          "name": "snapshot_window",
+          "passed": true,
+          "answer": "The count of data points for SYNTH_TEMPERATURE in the last two hours (from 2024-01-01 23:00:00 to 2024-01-02 01:00:00) is 37.",
+          "seconds": 3.012
+        },
+        {
+          "name": "interpretation_caution",
+          "passed": true,
+          "answer": "[causality:unproven] [lead_time:unproven] [stability:unproven]\nLa evidencia sintética no demuestra causalidad física porque la importancia del clasificador no implica una relación causa-efecto sin validación temporal o estudios causales. Tampoco prueba advertencia anticipada al no haberse verificado un retraso temporal ni historial calibrado de sensores, ni se ha realizado ninguna intervención que confirme estabilidad.",
+          "seconds": 1.66
+        }
+      ],
+      "digest": "3460ffeede5453ead027dbd2f821b12ad0aa3de54630971993babdb2165221f7",
+      "size": 23869191742,
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "qwen35moe",
+        "families": [
+          "qwen35moe"
+        ],
+        "parameter_size": "36.0B",
+        "quantization_level": "Q4_K_M"
+      },
+      "capabilities": [
+        "completion",
+        "vision",
+        "tools",
+        "thinking"
+      ],
+      "passed": true,
+      "passed_cases": 3
+    },
+    {
+      "model": "qwen3.6:27b",
+      "cases": [
+        {
+          "name": "tool_round_trip",
+          "model": "qwen3.6:27b",
+          "passed": true,
+          "seconds": 12.144
+        },
+        {
+          "name": "snapshot_window",
+          "passed": true,
+          "answer": "The returned count is 37.",
+          "seconds": 5.342
+        },
+        {
+          "name": "interpretation_caution",
+          "passed": true,
+          "answer": "[causality:unproven] [lead_time:unproven] [stability:unproven]\n\nLa importancia de la característica 0.8 en un clasificador indica correlación estadística, no causalidad física, especialmente sin estudios causales o intervenciones. No se puede probar el tiempo de anticipación (lead time) sin validación de desfase temporal ni historial de sensores calibrados. La estabilidad de X no está demostrada, ya que la ausencia de alarmas no garantiza estabilidad física sin datos históricos de calibración o monitoreo continuo.",
+          "seconds": 6.167
+        }
+      ],
+      "digest": "9d5803d493a991af27b9441c098aa56f2ed7bbd260877f075ec09b575c049bc3",
+      "size": 17769076933,
+      "details": {
+        "parent_model": "qwen3.6-source:27b-mtp-q4_K_M-20260824",
+        "format": "gguf",
+        "family": "qwen35",
+        "families": [
+          "qwen35"
+        ],
+        "parameter_size": "27.3B",
+        "quantization_level": "Q4_K_M"
+      },
+      "capabilities": [
+        "completion",
+        "vision",
+        "tools",
+        "thinking"
+      ],
+      "passed": true,
+      "passed_cases": 3
+    },
+    {
+      "model": "qwen3.8:27b",
+      "cases": [
+        {
+          "name": "tool_round_trip",
+          "model": "qwen3.8:27b",
+          "passed": true,
+          "seconds": 11.531
+        },
+        {
+          "name": "snapshot_window",
+          "passed": true,
+          "answer": "37",
+          "seconds": 4.272
+        },
+        {
+          "name": "interpretation_caution",
+          "passed": true,
+          "answer": "[causality:unproven]\n[lead_time:unproven]\n[stability:unproven]\n\nLa evidencia sintética proporcionada es insuficiente para establecer ninguna de las tres afirmaciones. Una alta importancia de función (0.8) en un clasificador indica correlación o relevancia estadística, no causalidad física, especialmente sin estudios causales o intervenciones. La ausencia de validación de desfase temporal y de alarmas previas impide demostrar que la señal de X sirva como aviso anticipado de una falla. Finalmente, la falta de historial calibrado y de datos de estabilidad impide concluir que el sensor X sea estable o confiable en el tiempo.",
+          "seconds": 7.57
+        }
+      ],
+      "digest": "22130167c4c20e20c7b71454612966ca8e8171e9b3cc8ab6ce8aa6cbfec79643",
+      "size": 17741872154,
+      "details": {
+        "parent_model": "qwen3.8:27b-q4_K_M",
+        "format": "gguf",
+        "family": "qwen35",
+        "families": [
+          "qwen35"
+        ],
+        "parameter_size": "27.3B",
+        "quantization_level": "Q4_K_M"
+      },
+      "capabilities": [
+        "completion",
+        "vision",
+        "tools",
+        "thinking"
+      ],
+      "passed": true,
+      "passed_cases": 3
+    },
+    {
+      "model": "ornith-1.5:35b",
+      "cases": [
+        {
+          "name": "tool_round_trip",
+          "model": "ornith-1.5:35b",
+          "passed": true,
+          "seconds": 11.202
+        },
+        {
+          "name": "snapshot_window",
+          "passed": false,
+          "error": "AgentError: Expected one snapshot_bounds action; received {'role': 'assistant', 'content': 'I\\'m not able to complete this request as written, and I want to be upfront about why rather than fabricate a result.\\n\\nThe problem is that I don\\'t actually have access to the tools being referenced. There\\'s no `snapshot_bounds`, `read_sensor`, or any similar capability available to me in this conversation. I have no way to:\\n\\n- Retrieve `snapshot_bounds` to determine the current snapshot timestamp\\n- Call `read_sensor` with timestamps\\n- Obtain a returned count from any sensor read\\n\\nIf I were to \"report a count,\" I would have to invent one, which would be misleading—especially since you\\'ve explicitly noted this is real operational data (SYNTH_TEMPERATURE is a legitimate tag, and the instruction to not make further calls suggests this feeds into something consequential).\\n\\nA few things that would help me actually be useful:\\n\\n1. **Are these tools available in your environment?** If this is meant to run in a system with those functions (e.g., a specific API, a script, a control system), the calls need to be executed there, not by me. I can help you write the code to do it if you tell me the interface.\\n\\n2. **What\\'s the actual interface?** If you can share the API/endpoint details, the expected request format for `read_sensor`, and how `snapshot_bounds` is exposed, I can help you construct the correct calls.\\n\\n3. **Timestamp handling.** One thing worth flagging: you correctly note that \"now\" means the latest snapshot timestamp, not wall-clock. When you build this, make sure you derive the 2-hour window from the `snapshot_bounds` result (e.g., `[latest_snapshot - 2h, latest_snapshot]`) rather than assuming the current time, since sensor snapshots can lag.\\n\\nIf you can point me at the actual tooling or interface, I\\'m glad to help you get the real count. But I won\\'t report a fabricated number as if it were the sensor\\'s returned count.'}.",
+          "seconds": 5.94
+        },
+        {
+          "name": "interpretation_caution",
+          "passed": true,
+          "answer": "[causality:unproven] [lead_time:unproven] [stability:unproven]\n\nEl modelo solo asignó una importancia de 0.8 al sensor X, pero la importancia de características no implica causalidad física: puede reflejar correlación, ruido o sesgo del conjunto de datos. Que X no haya generado alarmas no prueba que sea la causa del fallo, ni que exista una relación de causa-efecto medible. No hay validación por rezago temporal (time-lag), por lo que no se puede establecer que X anteceda al fallo, lo que descarta la advertencia anticipada. Tampoco hay historia calibrada del sensor, intervención controlada ni estudio causal, por lo que no se puede afirmar estabilidad ni reproducibilidad de X. En resumen, la evidencia es insuficiente para cualquiera de las tres afirmaciones.",
+          "seconds": 2.808
+        }
+      ],
+      "digest": "9f3b89b2521908dd2e6f7a11fa368e62c8f89e1075f22604e4d1a76dd1240fcc",
+      "size": 22616285024,
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "qwen35moe",
+        "families": [
+          "qwen35moe"
+        ],
+        "parameter_size": "35.5B",
+        "quantization_level": "Q4_K_M"
+      },
+      "capabilities": [
+        "tools",
+        "thinking",
+        "completion",
+        "vision"
+      ],
+      "passed": false,
+      "passed_cases": 2
+    },
+    {
+      "model": "gemma4:12b",
+      "cases": [
+        {
+          "name": "tool_round_trip",
+          "model": "gemma4:12b",
+          "passed": true,
+          "seconds": 9.094
+        },
+        {
+          "name": "snapshot_window",
+          "passed": true,
+          "answer": "37",
+          "seconds": 5.805
+        },
+        {
+          "name": "interpretation_caution",
+          "passed": true,
+          "answer": "[causality:unproven], [lead_time:unproven], [stability:unproven]\n\nNo se puede determinar causalidad física porque la importancia de un modelo de aprendizaje automático es una correlación estadística, no una prueba de causalidad. No hay evidencia de advertencia anticipada (lead_time) porque no hay datos temporales ni fallas registradas. No se puede confirmar la estabilidad de X porque no hay historial de calibración ni contexto operativo.",
+          "seconds": 4.234
+        }
+      ],
+      "digest": "4eb23ef187e2c5462566d6a1d3bbbc2f1346d0b4327cbb66d58fffbcc9b2b05c",
+      "size": 7556508396,
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "gemma4",
+        "families": [
+          "gemma4"
+        ],
+        "parameter_size": "11.9B",
+        "quantization_level": "Q4_K_M"
+      },
+      "capabilities": [
+        "completion",
+        "vision",
+        "audio",
+        "tools",
+        "thinking"
+      ],
+      "passed": true,
+      "passed_cases": 3
+    },
+    {
+      "model": "gemma4:31b",
+      "cases": [
+        {
+          "name": "tool_round_trip",
+          "model": "gemma4:31b",
+          "passed": true,
+          "seconds": 16.564
+        },
+        {
+          "name": "snapshot_window",
+          "passed": true,
+          "answer": "37",
+          "seconds": 11.924
+        },
+        {
+          "name": "interpretation_caution",
+          "passed": true,
+          "answer": "[causality:unproven], [lead_time:unproven], [stability:unproven]\n\nLa importancia de una característica en un clasificador indica correlación estadística, no causalidad física. La ausencia de alarmas y la falta de validación temporal o estudios causales impiden confirmar que el sensor X prediga fallos o que sea inherentemente estable.",
+          "seconds": 9.145
+        }
+      ],
+      "digest": "6316f0629137b426c9d9b853ffc4c8209589f30ee39aebede6285096c0ff47e7",
+      "size": 19868981791,
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "gemma4",
+        "families": [
+          "gemma4"
+        ],
+        "parameter_size": "31.3B",
+        "quantization_level": "Q4_K_M"
+      },
+      "capabilities": [
+        "completion",
+        "vision",
+        "tools",
+        "thinking"
+      ],
+      "passed": true,
+      "passed_cases": 3
+    },
+    {
+      "model": "qwen3.5:122b",
+      "cases": [
+        {
+          "name": "tool_round_trip",
+          "model": "qwen3.5:122b",
+          "passed": true,
+          "seconds": 28.185
+        },
+        {
+          "name": "snapshot_window",
+          "passed": true,
+          "answer": "The returned count for the SYNTH_TEMPERATURE tag over the last two hours is 37.",
+          "seconds": 6.177
+        },
+        {
+          "name": "interpretation_caution",
+          "passed": true,
+          "answer": "[causality:unproven] [lead_time:unproven] [stability:unproven]\n\nLa alta importancia asignada por un clasificador sintético no demuestra causalidad física, ya que carece de validación temporal, historial calibrado o estudios causales. Tampoco prueba que la ausencia de alarmas en X constituya una advertencia anticipada de una falla, ni confirma la estabilidad del sensor, dado que la importancia de la característica puede reflejar correlaciones espurias o ruido en lugar de un comportamiento físico real o predecible.",
+          "seconds": 4.968
+        }
+      ],
+      "digest": "8b9d11d807c57feb1e2ecb0d6cbf40334c37dcc3523bed5540af4f927f112a37",
+      "size": 81370036360,
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "qwen35moe",
+        "families": [
+          "qwen35moe"
+        ],
+        "parameter_size": "125.1B",
+        "quantization_level": "Q4_K_M"
+      },
+      "capabilities": [
+        "completion",
+        "vision",
+        "tools",
+        "thinking"
+      ],
+      "passed": true,
+      "passed_cases": 3
+    }
+  ],
+  "ollama_version": "0.33.3",
+  "finished_at": "2026-10-28T09:00:03.783784+00:00"
+}

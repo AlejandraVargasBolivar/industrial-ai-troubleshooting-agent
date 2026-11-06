@@ -2,15 +2,14 @@
 build_docs_db.py
 ================
 One-time script that reads all plant documents from the "RAG docs/" directory,
-chunks them by H2 section, embeds each chunk using the BGE-small retrieval model,
+chunks them by H2 section, embeds each chunk using Ollama BGE-M3,
 and stores everything in a ChromaDB vector database.
 
 Usage:
     python build_docs_db.py             # Incremental upsert (safe to re-run)
     python build_docs_db.py --rebuild   # Wipe and rebuild from scratch
 
-On first run, the BGE model (~130 MB) is downloaded automatically from HuggingFace
-and cached locally. No internet needed after that.
+The embedding model must already be installed on the private Ollama server.
 """
 
 import os
@@ -20,17 +19,18 @@ import yaml
 import json
 import argparse
 from pathlib import Path
+from local_runtime.ollama_client import embed_texts, embedding_model, ollama_url, validate_index
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 PROJECT_DIR = Path(__file__).parent
 DOCS_DIR    = PROJECT_DIR / "RAG docs"
-DB_DIR      = PROJECT_DIR / "rag_vector_db"
-COLLECTION  = "plant_docs"
-MODEL_NAME  = "BAAI/bge-small-en-v1.5"
 
 # BGE models perform best when the query is prefixed — we use the same prefix
 # at query time (in rag_tools.py) to keep embeddings aligned.
-EMBED_PREFIX = "Represent this sentence for searching relevant passages: "
+
+DB_DIR      = PROJECT_DIR / "rag_vector_db"
+COLLECTION  = "plant_docs"
+EMBED_PREFIX = ""
 
 # Chunking thresholds
 MIN_CHUNK_TOKENS  = 50    # merge sections shorter than this with the next
@@ -182,14 +182,13 @@ def load_all_documents() -> list[dict]:
 
 def build(rebuild: bool = False) -> None:
     import chromadb
-    from sentence_transformers import SentenceTransformer
 
     print(f"\n{'='*60}")
     print("Boiler Historian — Plant Document RAG Builder")
     print(f"{'='*60}")
     print(f"Docs dir  : {DOCS_DIR}")
     print(f"DB dir    : {DB_DIR}")
-    print(f"Model     : {MODEL_NAME}")
+    print(f"Model     : {embedding_model()}")
     print(f"Mode      : {'REBUILD (wipe + re-index)' if rebuild else 'UPSERT (incremental)'}")
     print()
 
@@ -220,37 +219,62 @@ def build(rebuild: bool = False) -> None:
     print(f"\n  Total: {len(all_chunks)} chunks across {len(docs)} documents")
     print(f"  Total text: {total_chars:,} characters")
 
-    # ── 3. Embed ──────────────────────────────────────────────────────────────
-    print(f"\nStep 3/4 — Loading embedding model ({MODEL_NAME})...")
-    print("  (First run downloads ~130MB — subsequent runs use local cache)")
-    model = SentenceTransformer(MODEL_NAME)
+
+    # ── 3. Embed using Ollama on the NVIDIA server ─────────────────────────
+    print(f"\nStep 3/4 — Generating embeddings with {embedding_model()} via Ollama...")
+    print(f"  Ollama endpoint: {ollama_url()}")
 
     texts_to_embed = [c["prefixed_text"] for c in all_chunks]
-    print(f"  Embedding {len(texts_to_embed)} chunks...")
-    # normalize_embeddings=True is recommended for BGE models (cosine similarity)
-    embeddings = model.encode(
-        texts_to_embed,
-        normalize_embeddings=True,
-        show_progress_bar=True,
-        batch_size=64,
-    )
-    print(f"  Embedding shape: {embeddings.shape}")
+    embeddings = []
+
+    batch_size = 32
+
+    for i in range(0, len(texts_to_embed), batch_size):
+        batch_texts = texts_to_embed[i:i + batch_size]
+
+        embeddings.extend(embed_texts(batch_texts))
+        print(f"  Embedded {len(embeddings)}/{len(texts_to_embed)} chunks", end="\r")
+
+    if embeddings and any(len(vector) != len(embeddings[0]) for vector in embeddings):
+        raise RuntimeError("Embedding dimensions are inconsistent.")
+
+    print(f"\n  Embedding dimensions: {len(embeddings[0]) if embeddings else 0}")
 
     # ── 4. Store in ChromaDB ──────────────────────────────────────────────────
     print(f"\nStep 4/4 — Storing in ChromaDB at {DB_DIR}...")
     DB_DIR.mkdir(parents=True, exist_ok=True)
-    client = chromadb.PersistentClient(path=str(DB_DIR))
+    from chromadb.config import Settings
+    client = chromadb.PersistentClient(
+        path=str(DB_DIR), settings=Settings(anonymized_telemetry=False),
+    )
+
+    if not all_chunks:
+        raise RuntimeError("No chunks found; the existing index has not been changed.")
+    existing = None
+    try:
+        existing = client.get_collection(COLLECTION)
+    except chromadb.errors.NotFoundError:
+        pass
+    if existing is not None and not rebuild:
+        validate_index(existing)
+        if not (existing.metadata or {}).get("embedding_model"):
+            raise ValueError("Legacy index has no model provenance; use --rebuild.")
 
     if rebuild:
         try:
             client.delete_collection(COLLECTION)
             print(f"  Deleted existing collection '{COLLECTION}'")
-        except Exception:
+        except chromadb.errors.NotFoundError:
             pass
 
     collection = client.get_or_create_collection(
         name=COLLECTION,
-        metadata={"hnsw:space": "cosine"},  # BGE embeddings use cosine distance
+        metadata={
+            "hnsw:space": "cosine",
+            "embedding_model": embedding_model(),
+            "embedding_dimension": len(embeddings[0]),
+            "query_prefix": EMBED_PREFIX,
+        },
     )
 
     # Upsert in batches of 100 (ChromaDB recommendation)
@@ -280,7 +304,7 @@ def build(rebuild: bool = False) -> None:
         collection.upsert(
             ids=ids,
             documents=documents,
-            embeddings=batch_embeddings.tolist(),
+            embeddings=batch_embeddings,
             metadatas=metadatas,
         )
         total_upserted += len(batch)
@@ -295,10 +319,10 @@ def build(rebuild: bool = False) -> None:
     print(f"  Documents indexed : {len(docs)}")
     print(f"  Total chunks      : {collection.count()}")
     print(f"  Vector DB path    : {DB_DIR}")
-    print(f"  Embedding model   : {MODEL_NAME}")
+    print(f"  Embedding model   : {embedding_model()}")
     print()
     print("Next steps:")
-    print("  1. Restart the MCP server (restart Claude Code)")
+    print("  1. Restart the local agent to reload the MCP server")
     print("  2. Use docs_search(), docs_list_documents(), docs_get_document() tools")
     print()
 

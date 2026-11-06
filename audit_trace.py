@@ -266,7 +266,22 @@ def _summarize_docs_get(result: Any) -> dict:
     }
 
 
+def _summarize_analysis(result: Any) -> dict:
+    model = _safe_get(result, "model", default={})
+    rows = model.get("total_rows", 0)
+    if "n_components" in model:
+        detail = f"{model['n_components']} PCA components, variance={model.get('cumulative_variance')}"
+    else:
+        detail = f"{model.get('type', '?')}, anomaly_rate={_safe_get(result, 'results', 'anomaly_rate_pct')}%"
+    return {
+        "summary_text": f"Analyzed {rows} observations: {detail}",
+        "metrics": {"total_rows": rows},
+    }
+
+
 _SUMMARIZERS = {
+    "analysis_run_mspc": _summarize_analysis,
+    "analysis_run_fault_detection": _summarize_analysis,
     "historian_list_tags": _summarize_list_tags,
     "historian_search_tags": _summarize_search_tags,
     "historian_get_data_range": _summarize_data_range,
@@ -323,7 +338,12 @@ def _capture_provenance(question: str) -> dict:
         except OSError:
             prov["doc_set_file_count"] = "(unreadable)"
 
-    prov["model"] = os.environ.get("CLAUDE_MODEL", "(unknown)")
+    prov["model"] = os.environ.get("OLLAMA_MODEL", os.environ.get("CLAUDE_MODEL", "(unknown)"))
+    if os.environ.get("OLLAMA_MODEL"):
+        prov["inference_backend"] = "ollama"
+        prov["embedding_model"] = os.environ.get("OLLAMA_EMBED_MODEL", "bge-m3:latest")
+        prov["inference_protocol"] = os.environ.get("LOCAL_AGENT_PROTOCOL", "(unknown)")
+        prov["native_thinking"] = os.environ.get("OLLAMA_THINK", "(model default)")
 
     return prov
 
@@ -409,7 +429,7 @@ class TraceSession:
         self._append_entry(entry)
         return step
 
-    def finalize(self) -> dict:
+    def finalize(self, status: str = "complete", error: str | None = None) -> dict:
         if self.finalized:
             return self._read_meta()
 
@@ -434,6 +454,8 @@ class TraceSession:
             "reasoning_entries": self._count_entries("reasoning"),
             "trace_sha256": trace_hash.hexdigest(),
             "finalized": True,
+            "run_status": status,
+            "run_error": error,
         }
 
         meta_path = self.trace_dir / "session_meta.json"
@@ -486,7 +508,8 @@ def _auto_render_report(trace_dir: Path) -> tuple[str | None, str | None]:
         report_path = render_report(str(trace_dir))
         summary_path = render_summary(str(trace_dir))
     except Exception as exc:
-        logger.warning("Auto-render failed for %s: %s", trace_dir, exc)
+        logger.exception("Auto-render failed for %s", trace_dir)
+        raise RuntimeError(f"Audit report generation failed for {trace_dir}: {exc}") from exc
     return report_path, summary_path
 
 
@@ -502,7 +525,7 @@ def start_session(question: str) -> dict:
     global _active_session
 
     if _active_session is not None and not _active_session.finalized:
-        _active_session.finalize()
+        _active_session.finalize("interrupted", "A new audit replaced the unfinished session.")
         _auto_render_report(_active_session.trace_dir)
         logger.info("Auto-finalized previous session: %s", _active_session.run_id)
 
@@ -522,14 +545,16 @@ def start_session(question: str) -> dict:
     }
 
 
-def end_session() -> dict:
+def end_session(status: str = "complete", error: str | None = None) -> dict:
     """Finalize the active session, seal it, and auto-generate reports."""
     global _active_session
 
     if _active_session is None:
         return {"error": "No active audit session."}
 
-    meta = _active_session.finalize()
+    if status not in {"complete", "failed", "interrupted"}:
+        raise ValueError("Invalid audit run status.")
+    meta = _active_session.finalize(status, error)
     report_path, summary_path = _auto_render_report(_active_session.trace_dir)
 
     result = {
@@ -538,6 +563,7 @@ def end_session() -> dict:
         "total_steps": meta.get("total_steps", 0),
         "tool_calls": meta.get("tool_calls", 0),
         "reasoning_entries": meta.get("reasoning_entries", 0),
+        "run_status": meta.get("run_status", "complete"),
         "trace_dir": str(_active_session.trace_dir),
         "report": report_path,
         "summary": summary_path,

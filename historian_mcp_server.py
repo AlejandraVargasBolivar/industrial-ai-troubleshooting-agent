@@ -1,7 +1,8 @@
 """
 Boiler Historian MCP Server
 
-Entry point for all tool calls from Claude Code. This file is responsible
+Entry point for all tool calls from MCP clients, including the local agent.
+This file is responsible
 for two things only: declaring tools (list_tools) and routing calls to the
 right implementation module (call_tool). All query logic lives elsewhere.
 
@@ -10,8 +11,8 @@ right implementation module (call_tool). All query logic lives elsewhere.
   kg_tools.py         —  kg_* tools         (knowledge graph wrappers)
   rag_tools.py        —  docs_* tools       (ChromaDB vector search)
 
-Start automatically via Claude Code's MCP configuration (see CLAUDE.md).
-Do NOT run this manually during normal use — Claude Code manages the process.
+The local agent starts and manages this process over MCP stdio.
+Do not type commands into its standard input.
 """
 
 import os
@@ -41,6 +42,7 @@ from kg_tools import (
 )
 from rag_tools import rag_search, rag_list_documents, rag_get_document
 import audit_trace
+from local_runtime.analysis_tools import ANALYSIS_SCHEMAS, run_analysis
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -63,6 +65,21 @@ server = Server("boiler-historian")
 @server.list_tools()
 async def list_tools() -> list[types.Tool]:
     return [
+        *[
+            types.Tool(
+                name=name,
+                description=(
+                    "Run the existing PCA MSPC analysis and return JSON statistics, "
+                    "worst events and plot/report paths. Follow the MSPC workflow."
+                    if name == "analysis_run_mspc" else
+                    "Run the existing Isolation Forest and XGBoost fault detection. "
+                    "Return JSON results, leading indicators and plot/report paths. "
+                    "Follow the ML fault detection workflow."
+                ),
+                inputSchema=schema,
+            )
+            for name, schema in ANALYSIS_SCHEMAS.items()
+        ],
         # ── Historian ────────────────────────────────────────────────────────
         types.Tool(
             name="historian_list_tags",
@@ -465,7 +482,14 @@ async def list_tools() -> list[types.Tool]:
                 "Note: sessions auto-finalize when a new one starts or when "
                 "the report is generated — this is a manual override."
             ),
-            inputSchema={"type": "object", "properties": {}, "required": []},
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["complete", "failed", "interrupted"]},
+                    "error": {"type": "string"},
+                },
+                "required": [],
+            },
         ),
         types.Tool(
             name="audit_log_reasoning",
@@ -512,7 +536,9 @@ async def list_tools() -> list[types.Tool]:
 # Tool call dispatcher
 # ---------------------------------------------------------------------------
 @server.call_tool()
-async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextContent]:
+async def call_tool(
+    name: str, arguments: dict[str, Any],
+) -> list[types.TextContent] | types.CallToolResult:
     try:
         logger.info("tool=%s args=%s", name, list(arguments.keys()))
 
@@ -521,7 +547,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             result = audit_trace.start_session(arguments["question"])
             return [types.TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
         elif name == "audit_end_session":
-            result = audit_trace.end_session()
+            result = audit_trace.end_session(arguments.get("status", "complete"), arguments.get("error"))
             return [types.TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
         elif name == "audit_log_reasoning":
             session = audit_trace.get_active_session()
@@ -541,7 +567,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
         t0 = time.perf_counter()
 
         # Historian
-        if name == "historian_list_tags":
+        if name in ANALYSIS_SCHEMAS:
+            result = await run_analysis(name, arguments)
+        elif name == "historian_list_tags":
             result = tool_list_tags()
         elif name == "historian_search_tags":
             result = tool_search_tags(arguments["query"])
@@ -627,23 +655,35 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             result = {"error": f"Unknown tool: {name}"}
 
         duration_ms = (time.perf_counter() - t0) * 1000
-        session.record_tool_call(
+        failed = (
+            isinstance(result, dict) and "error" in result
+            or isinstance(result, list) and any(
+                isinstance(item, dict) and "error" in item for item in result
+            )
+        )
+        step = session.record_tool_call(
             tool_name=name,
             arguments=arguments,
             result=result,
             duration_ms=duration_ms,
-            success=True,
+            success=not failed,
+            error=str(result) if failed else None,
         )
 
-        return [types.TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=json.dumps(result, indent=2, default=str))],
+            structuredContent={"result": result, "audit_step": step},
+            isError=failed,
+        )
 
     except Exception as exc:
         duration_ms = (time.perf_counter() - t0) * 1000 if "t0" in locals() else 0
         logger.error("tool=%s failed", name, exc_info=True)
 
         session = audit_trace.get_active_session()
-        if session is not None:
-            session.record_tool_call(
+        step = None
+        if session is not None and not session.finalized:
+            step = session.record_tool_call(
                 tool_name=name,
                 arguments=arguments,
                 result=None,
@@ -653,7 +693,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
             )
 
         error_msg = {"error": str(exc), "traceback": traceback.format_exc()}
-        return [types.TextContent(type="text", text=json.dumps(error_msg, indent=2))]
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=json.dumps(error_msg, indent=2))],
+            structuredContent={"result": error_msg, "audit_step": step},
+            isError=True,
+        )
 
 
 # ---------------------------------------------------------------------------

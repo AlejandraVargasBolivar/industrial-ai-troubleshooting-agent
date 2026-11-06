@@ -212,6 +212,8 @@ def run_self_checks(entries: list[dict], meta: dict | None) -> list[str]:
 # ---------------------------------------------------------------------------
 
 _TOOL_LABELS = {
+    "analysis_run_mspc": "Ran PCA MSPC analysis",
+    "analysis_run_fault_detection": "Ran Isolation Forest and feature importance",
     "historian_get_statistics": "Retrieved statistics",
     "historian_get_tag_data": "Retrieved time-series data",
     "historian_get_data_range": "Checked available data range",
@@ -322,6 +324,13 @@ def render_markdown(
 
     lines.append("# Root Cause Analysis Report")
     lines.append("")
+    if meta and meta.get("run_status", "complete") != "complete":
+        lines.append(
+            f"> **INCOMPLETE RUN ({meta['run_status']}):** "
+            f"{meta.get('run_error') or 'Investigation did not complete.'} "
+            "Any conclusions below are partial, not a completed diagnosis."
+        )
+        lines.append("")
 
     # Warnings (only if present)
     if warnings:
@@ -638,6 +647,13 @@ def render_summary_markdown(meta: dict | None, entries: list[dict], classified: 
     lines: list[str] = []
     lines.append("# Executive Summary")
     lines.append("")
+    if meta and meta.get("run_status", "complete") != "complete":
+        lines.append(
+            f"> **INCOMPLETE RUN ({meta['run_status']}):** "
+            f"{meta.get('run_error') or 'Investigation did not complete.'} "
+            "Any conclusions below are partial, not a completed diagnosis."
+        )
+        lines.append("")
 
     question = meta.get("question", "?") if meta else "?"
     lines.append(f"**Question:** {question}")

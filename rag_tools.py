@@ -20,23 +20,23 @@ import os
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
-import json
+import logging
 from pathlib import Path
 from typing import Optional
+from local_runtime.ollama_client import embed_texts, embedding_model, validate_index
 
 # ── Paths (same as build_docs_db.py) ─────────────────────────────────────────
 PROJECT_DIR = Path(__file__).parent
 DOCS_DIR    = PROJECT_DIR / "RAG docs"
 DB_DIR      = PROJECT_DIR / "rag_vector_db"
 COLLECTION  = "plant_docs"
-MODEL_NAME  = "BAAI/bge-small-en-v1.5"
 
-# BGE query prefix — must match what was used during indexing in build_docs_db.py
-QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+QUERY_PREFIX = ""
+logger = logging.getLogger(__name__)
 
 # ── Lazy singleton ─────────────────────────────────────────────────────────────
 
-# Tuple is (chroma_client, chroma_collection, SentenceTransformer).
+# Tuple is (chroma_client, chroma_collection, unused legacy embedding handle).
 # The client must be kept here — if it goes out of scope after _get_rag() returns,
 # Python GCs it, its __del__ closes the underlying httpx connection, and every
 # subsequent collection.get() / collection.query() raises "client has been closed".
@@ -62,23 +62,32 @@ def _get_rag() -> tuple:
 
     try:
         import chromadb
-        from sentence_transformers import SentenceTransformer
+        from chromadb.config import Settings
     except ImportError as e:
         raise RuntimeError(
             f"Missing dependency: {e}. "
-            "Run 'pip install chromadb sentence-transformers' to install."
+            "Check the project requirements."
         ) from e
 
-    client = chromadb.PersistentClient(path=str(DB_DIR))
+    client = chromadb.PersistentClient(
+        path=str(DB_DIR), settings=Settings(anonymized_telemetry=False),
+    )
     try:
         collection = client.get_collection(COLLECTION)
-    except Exception:
+    except chromadb.errors.NotFoundError as exc:
         raise RuntimeError(
             f"Collection '{COLLECTION}' not found in the RAG database. "
             "Run 'python build_docs_db.py --rebuild' to re-build the index."
+        ) from exc
+
+    validate_index(collection)
+    if not (collection.metadata or {}).get("embedding_model"):
+        logger.warning(
+            "Legacy RAG index has no embedding provenance. Dimensions will be checked; "
+            "run build_docs_db.py --rebuild to record model provenance."
         )
 
-    model = SentenceTransformer(MODEL_NAME)
+    model = None
     _RAG_INSTANCE = (client, collection, model)
     return collection, model
 
@@ -112,13 +121,16 @@ def rag_search(
         doc_id, doc_type, title, section_title, chunk_text,
         relevance_score (0–1, higher = more relevant), revision
     """
-    collection, model = _get_rag()
-
-    # Embed query — BGE requires the query prefix for best retrieval quality
-    query_vector = model.encode(
-        QUERY_PREFIX + query,
-        normalize_embeddings=True,
-    ).tolist()
+    if not query.strip() or not 1 <= top_k <= 20:
+        raise ValueError("Provide a non-empty query and top_k between 1 and 20.")
+    collection, _ = _get_rag()
+    query_vector = embed_texts([QUERY_PREFIX + query], timeout=120)[0]
+    indexed = collection.get(limit=1, include=["embeddings"])["embeddings"]
+    if indexed is not None and len(indexed) and len(indexed[0]) != len(query_vector):
+        raise ValueError(
+            f"Index dimensions do not match {embedding_model()}; "
+            "run build_docs_db.py --rebuild."
+        )
 
     # Build optional metadata pre-filter.
     # NOTE: ChromaDB 1.x $contains does NOT do substring matching on string fields —
@@ -130,9 +142,9 @@ def rag_search(
         where = {"doc_type": {"$eq": doc_type}}
 
     # Fetch more results than top_k so post-filtering still leaves enough
-    fetch_n = min(top_k * 6, collection.count())
+    fetch_n = collection.count()
     if fetch_n == 0:
-        return [{"error": "Vector database is empty. Run build_docs_db.py first."}]
+        raise RuntimeError("Vector database is empty. Run build_docs_db.py first.")
 
     query_kwargs: dict = {
         "query_embeddings": [query_vector],
@@ -142,12 +154,7 @@ def rag_search(
     if where:
         query_kwargs["where"] = where
 
-    try:
-        results = collection.query(**query_kwargs)
-    except Exception as e:
-        if "no documents" in str(e).lower() or "n_results" in str(e).lower():
-            return []
-        raise
+    results = collection.query(**query_kwargs)
 
     documents = results["documents"][0]
     metadatas = results["metadatas"][0]
@@ -155,9 +162,13 @@ def rag_search(
 
     # Post-filter by equipment_id and sensor_tag (substring check on comma-joined string)
     def passes_filter(meta: dict) -> bool:
-        if equipment_id and equipment_id not in meta.get("equipment", ""):
+        if equipment_id and equipment_id not in {
+            item.strip() for item in meta.get("equipment", "").split(",")
+        }:
             return False
-        if sensor_tag and sensor_tag not in meta.get("tags", ""):
+        if sensor_tag and sensor_tag not in {
+            item.strip() for item in meta.get("tags", "").split(",")
+        }:
             return False
         return True
 

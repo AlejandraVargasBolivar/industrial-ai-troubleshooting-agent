@@ -3,6 +3,21 @@
 # Dataset: Coal-fired boiler at a chemical plant in Zhejiang, China
 # Collection period: 2022-03-27 14:28:54 to 2022-04-01 14:28:49 (5-second intervals)
 
+import logging
+
+
+def measurement_units(tag_name: str, legacy_units: str | None) -> str | None:
+    """Correct legacy steam-pressure labels; numeric readings are already in MPa."""
+    if tag_name in {"PTCA_8322A", "PTCA_8324"}:
+        if legacy_units != "MPa":
+            logging.getLogger(__name__).warning(
+                "%s metadata labels readings as %s; returning MPa without rescaling values.",
+                tag_name, legacy_units,
+            )
+        return "MPa"
+    return legacy_units
+
+
 TAG_METADATA = {
     # --- Furnace Pressure Transmitters ---
     "PT_8313A": {
@@ -50,14 +65,14 @@ TAG_METADATA = {
     # --- Steam / Container Pressure ---
     "PTCA_8322A": {
         "description": "Pot pressure (left side steam drum pressure)",
-        "units": "kPa",
+        "units": "MPa",
         "sensor_type": "Pressure",
         "normal_min": None,
         "normal_max": None,
     },
     "PTCA_8324": {
         "description": "Container outlet vapour pressure",
-        "units": "kPa",
+        "units": "MPa",
         "sensor_type": "Pressure",
         "normal_min": None,
         "normal_max": None,

@@ -25,6 +25,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import duckdb
+from tag_metadata import measurement_units
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
@@ -79,7 +80,7 @@ def load_data(downsample_minutes=1, start_time=None, end_time=None):
     all_tags = [r[0] for r in tag_rows]
 
     meta_rows = con.execute("SELECT tag_name, description, units FROM tags").fetchall()
-    tag_meta = {r[0]: {"description": r[1], "units": r[2]} for r in meta_rows}
+    tag_meta = {r[0]: {"description": r[1], "units": measurement_units(r[0], r[2])} for r in meta_rows}
 
     tag_select = ", ".join([f'AVG("{t}") AS "{t}"' for t in all_tags])
     where_clauses = []

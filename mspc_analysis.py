@@ -23,6 +23,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import duckdb
+from tag_metadata import measurement_units
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from scipy import stats
@@ -77,7 +78,7 @@ def load_data(downsample_minutes=1, exclude_tags=None, start_time=None, end_time
         all_tags = [t for t in all_tags if t not in exclude_tags]
 
     meta_rows = con.execute("SELECT tag_name, description, units FROM tags").fetchall()
-    tag_meta = {r[0]: {"description": r[1], "units": r[2]} for r in meta_rows}
+    tag_meta = {r[0]: {"description": r[1], "units": measurement_units(r[0], r[2])} for r in meta_rows}
 
     tag_select = ", ".join([f'AVG("{t}") AS "{t}"' for t in all_tags])
     where_clauses = []
